@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.pixi/
+.venv/
+env/
+venv/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+pixi.lock
