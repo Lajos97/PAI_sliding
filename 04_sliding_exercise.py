@@ -11,6 +11,7 @@ You only need to modify the code in the "YOUR CODE HERE" sections. """
 
 import random
 from functools import partial
+from collections import deque
 
 from typing import Callable, Generator, Optional, Any
 
@@ -102,26 +103,22 @@ Algorithm = Callable[[SlidingProblem, HeuristicFunction], Generator]
 def hill_climbing(
     problem: SlidingProblem, f: HeuristicFunction
 ) -> Generator[State, None, None]:
-    """The hill climbing search algorithm.
-
-    Parameters
-    ----------
-
-    problem : SlidingProblem
-      The search problem
-    f : HeuristicFunction
-      The heuristic function that evaluates states. Its input is a state.
-    """
     current = problem.start_state()
-    parent = problem.nil
-    while not problem.is_goal_state(current):
-        yield current #yielding each state
-        next_states = problem.next_states(current)
-        # TODO:
-        # if with three branches
-        # Hint: pseudocode from lecture 3 (local search), slide 5
-        #       return None if no solution can be found
-    yield current
+    parent: Optional[State] = None
+    while True:
+        yield current
+        if problem.is_goal_state(current):
+            break
+        neighbors = problem.next_states(current)
+        if parent is not None and parent in neighbors and len(neighbors) > 1:
+            neighbors.remove(parent)
+        if not neighbors:
+            break
+        best_next = min(neighbors, key=f)
+        if f(best_next) < f(current):
+            parent, current = current, best_next
+        else:
+            break
 
 
 def tabu_search(
@@ -130,39 +127,57 @@ def tabu_search(
     tabu_len: int = 10,
     long_time: int = 1000,
 ) -> Generator[State, None, None]:
-    """The tabu search algorithm.
-
-    Parameters
-    ----------
-
-    problem : SlidingProblem
-      The search problem
-    f : HeuristicFunction
-      The heuristic function that evaluates states. Its input is a state.
-    tabu_len : int
-      The length of the tabu list.
-    long_time : int
-      If the optimum has not changed in 'long_time' steps, the algorithm stops.
-    """
-    pass
-    # TODO 
-    # Hint: pseudocode from lecture 3 (local search), slide 11
-    #       return None if no solution is found
-    #       don't forget to yield each state
-    #       don't forget about set operations (such as subtraction)
-
+    current = problem.start_state()
+    best = current
+    best_val = f(best)
+    tabu_queue: deque[State] = deque(maxlen=tabu_len)
+    tabu_set: set[State] = set()
+    steps_since_improvement = 0
+    while True:
+        yield current
+        if problem.is_goal_state(current):
+            break
+        neighbors = problem.next_states(current)
+        if not neighbors:
+            break
+        cand = []
+        for s in neighbors:
+            hv = f(s)
+            if (s not in tabu_set) or (hv < best_val):
+                cand.append((hv, s))
+        if not cand:
+            cand = [(f(s), s) for s in neighbors]
+        cand.sort(key=lambda t: t[0])
+        next_state = cand[0][1]
+        tabu_queue.append(current)
+        tabu_set = set(tabu_queue)
+        current = next_state
+        cur_val = f(current)
+        if cur_val < best_val:
+            best, best_val = current, cur_val
+            steps_since_improvement = 0
+        else:
+            steps_since_improvement += 1
+            if steps_since_improvement >= long_time:
+                break
 
 # heuristics
 
 
 def misplaced(state: State) -> int:
-    return 0 # TODO
-    # Hint: description on lecture 3 (local search) slide 22
+    return sum(1 for i, v in enumerate(state) if v != 0 and v != goal[i])
 
 
 def manhattan(state: State) -> int:
-    return 0 # TODO
-    # Hint: description on lecture 3 (local search) slide 22
+    goal_pos: dict[int, tuple[int, int]] = {val: (i // 3, i % 3) for i, val in enumerate(goal)}
+    total = 0
+    for i, v in enumerate(state):
+        if v == 0:
+            continue
+        r, c = i // 3, i % 3
+        rg, cg = goal_pos[v]
+        total += abs(r - rg) + abs(c - cg)
+    return total
 
 # END OF YOUR CODE
 
