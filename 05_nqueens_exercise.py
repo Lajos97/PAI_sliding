@@ -15,6 +15,7 @@ from functools import partial
 
 from typing import Any, Generator, Optional, Type
 from abc import ABC, abstractmethod
+from collections import deque
 
 import FreeSimpleGUI as sg #type: ignore
 
@@ -28,6 +29,7 @@ IMAGE_SIZE = (64, 64)
 sg.change_look_and_feel("SystemDefault")
 
 SquareState = Flag("SquareState", "W B Q U")
+
 
 
 class Square:
@@ -159,6 +161,7 @@ class QueensProblemNoAttack(QueensProblem):
 # row
 RowByRowState = tuple[ChessBoard, int]
 
+
 # SEARCH
 
 # implement the BT1 algorithm
@@ -177,55 +180,80 @@ State = ChessBoard | RowByRowState
 def backtrack(
     problem: QueensProblem, step_by_step: bool = False
 ) -> Optional[Generator[State, None, None]]:
-    """The BT1 algorithm implemented recursively with an inner funcion."""
     start_state = problem.start_state()
-    path : list[State] = []
 
-    def backtrack_recursive(current: State) -> Optional[list[State]]:
-        """The inner function that implements BT1."""
-        path.append(current)
-        # TODO
-        # Hint: Pseudocode from lecture 4 (backtrack) on slide 7
-        #       nil (on the slide) means an empty list
-        #       Use None for indicating failing!
+    def gen() -> Generator[State, None, None]:
+        path: list[State] = [start_state]
+        if step_by_step:
+            yield start_state
+        if problem.is_goal_state(start_state):
+            if step_by_step:
+                return
+            for s in path:
+                yield s
+            return
 
-    result = backtrack_recursive(start_state)
-    if result:
-        return (r for r in path) if step_by_step else (r for r in result)
-    else:
-        return None
+        stack: list = [iter(problem.next_states(start_state))]
+        ticks = 0
+        while path:
+            try:
+                nxt = next(stack[-1])
+                path.append(nxt)
+                if step_by_step:
+                    yield nxt
+                if problem.is_goal_state(nxt):
+                    if step_by_step:
+                        return
+                    for s in path:
+                        yield s
+                    return
+                stack.append(iter(problem.next_states(nxt)))
+            except StopIteration:
+                stack.pop()
+                path.pop()
+            ticks += 1
+            if not step_by_step and ticks % 200 == 0 and path:
+                yield path[-1]
+        return
+
+    return gen()
+
+
+
 
 
 # SEARCH PROBLEMS (STATE SPACES)
 # implement the "next_states" methods
 
 class QueensProblemAttack(QueensProblem):
-    """This search problem checks attacks, but puts Queens arbitrarily on the board."""
-
     def next_states(self, state: ChessBoard) -> Generator[ChessBoard, None, None]:
-        pass
-        # TODO
-        # Hint: Very similar to next_states of QueensProblemNoAttack
-        #       We yield a next board not only if the square has no queen,
-        #           but we also check if the square is under attack or not!
+        board = state
+        if board.nqueens() >= self.n:
+            return
+        for i, row in enumerate(board):
+            for j, square in enumerate(row):
+                if (not square.has_queen()) and (not board.is_under_attack(i, j)):
+                    nb = copy.deepcopy(board)
+                    nb[i, j].set_queen()
+                    nb.update_attack()
+                    yield nb
 
 
 class QueensProblemRowByRow(QueensProblem):
-    """This search problem checks attacks and puts queens on the board row by row.
-    The state is the board and the next row to put a queen in."""
-
     def start_state(self) -> RowByRowState:
         return self.board, 0
 
     def next_states(self, state: RowByRowState) -> Generator[RowByRowState, None, None]:
-        board, row_ind = state  # the state consists of a board and the row index of the next row in which there is no queen
-        pass
-        # TODO
-        # Hint: Very similar to previous implementations of next_sates
-        #       We have only one loop for the cells of the next row,
-        #           we consider the index of next row fixed (row_ind)
-        #       In order to keep count of the next row to be processed,
-        #           we yield not only the board, but an incremented row index as well.
+        board, row_ind = state
+        if row_ind >= self.n or board.nqueens() >= self.n:
+            return
+        for j, square in enumerate(board[row_ind]):
+            if (not square.has_queen()) and (not board.is_under_attack(row_ind, j)):
+                nb = copy.deepcopy(board)
+                nb[row_ind, j].set_queen()
+                nb.update_attack()
+                yield nb, row_ind + 1
+
 
     def is_goal_state(self, state: RowByRowState) -> bool:
         board, row_ind = state
@@ -338,11 +366,12 @@ board_gui = BoardGUI(ChessBoard(board_size, board_size), queens_draw_dict,
                      lambda x: x.state)
 window = create_window(board_gui)
 
-while True:  # Event Loop
+while True:
     event, values = window.Read(0)
     if event is None or event == "Exit" or event == sg.WIN_CLOSED:
         break
     window.Element("Go!").Update(text="Stop!" if go else "Go!")
+
     if event == "change_algorithm" or starting:
         queens_problem = state_spaces[values["state_space"]](board_size)
         algorithm: Any = algorithms[values["algorithm"]]
@@ -351,27 +380,35 @@ while True:  # Event Loop
         steps = 0
         starting = False
         stepping = True
+
     if event == "change_problem":
         board_size = board_sizes[values["board_size"]]
         queens_problem = state_spaces[values["state_space"]](board_size)
-        board_gui.board = queens_problem.board
+        board_gui = BoardGUI(queens_problem.board, queens_draw_dict, lambda x: x.state)
         board_gui.create()
-        path = algorithm(queens_problem)
-        steps = 0
         window.Close()
         window = create_window(board_gui)
         window.Finalize()
+        algorithm: Any = algorithms[values["algorithm"]]
+        path = algorithm(queens_problem)
+        steps = 0
         window.Element("algorithm").Update(values["algorithm"])
         window.Element("state_space").Update(values["state_space"])
         window.Element("board_size").Update(values["board_size"])
         stepping = True
+        go = False
         continue
+
+
+
+
     if event == "Restart":
         queens_problem = state_spaces[values["state_space"]](board_size)
         board_gui.board = queens_problem.board
         path = algorithm(queens_problem)
         steps = 0
         stepping = True
+
     if (event == "Step" or go or stepping) and path:
         try:
             state = next(path)
@@ -383,6 +420,7 @@ while True:  # Event Loop
         board_gui.board = board
         board_gui.update()
         stepping = False
+
     if event == "Go!":
         go = not go
 
