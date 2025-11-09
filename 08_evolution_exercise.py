@@ -107,13 +107,13 @@ def selection(states : list[State], min_val : int,
 def selection_roulette(states : list[State], 
                         f : Callable[[State],int] = fitness
                       ) -> list[State]:
-    '''Applies roulette wheel selection on population'''
-    pass # TODO
-    # Hint: Check lecture 7 (evolution) slide 14
-    #       Use choices from random library (and the weights and k optional argument)
-    #           to choose k "good" states randomly
-    #       The weights should be the deduced using the fitness function
-    #       Finally, return the preserved states.
+    weights = [f(s) for s in states]
+    if sum(weights) == 0:
+        weights = [1]*len(states)
+    preserved_states = choices(states, weights=weights, k=len(states))
+    assert valid_population(preserved_states)
+    return preserved_states
+
 
 
 ##################################################
@@ -130,11 +130,13 @@ def recombination(states : list[State]) -> list[State]:
     return new_states
 
 def recombine(state_a : State, state_b : State) -> tuple[State, State]:
-    '''Applies recombination step on two states'''
-    pass # TODO
-    # Hint: Check lecture 7 (evolution) slide 12
-    #       choose 2 random indexes for division barriers, and then 
-    #       perform the recombination
+    i, j = randint(0, 7), randint(0, 7)
+    if i > j:
+        i, j = j, i
+    child1 = state_a[:i] + state_b[i:j] + state_a[j:]
+    child2 = state_b[:i] + state_a[i:j] + state_b[j:]
+    return child1, child2
+
 
 ##################################################
 ##################### REPAIR #####################
@@ -149,12 +151,24 @@ def repair(states : list[State]) -> list[State]:
     return new_states
 
 def repair_states(state_a : State, state_b : State) -> tuple[State,State]:
-    '''Applies repair step on two states'''
     state_a_, state_b_ = state_a.copy(), state_b.copy()
-    pass # TODO
-    # Hint: Check for each element in state_a_ if it is contained twice.
-    #       If so, find a good substitute for it in state_b_
+    def repair_one(target: State, donor: State) -> State:
+        used = set()
+        result = target.copy()
+        for idx, val in enumerate(result):
+            if val not in used:
+                used.add(val)
+            else:
+                for cand in donor:
+                    if cand not in used:
+                        result[idx] = cand
+                        used.add(cand)
+                        break
+        return result
+    state_a_ = repair_one(state_a_, state_b_)
+    state_b_ = repair_one(state_b_, state_a)
     return (state_a_, state_b_)
+
 
 ##################################################
 #################### MUTATION ####################
@@ -167,13 +181,14 @@ def mutation(states : list[State], chance : float) -> list[State]:
     return new_population
 
 def mutate(state : State, chance : float) -> State:
-    '''Applies mutation step on one state'''
     mutated_state : State = state.copy()
-    pass # TODO
-    # Hint: Pick 2 random indexes and swap the elements on those positions
-    #       Do that only with the given chance! (Suggestion: use random.random())
-
+    if random() < chance:
+        i, j = randint(0, 7), randint(0, 7)
+        while j == i:
+            j = randint(0, 7)
+        mutated_state[i], mutated_state[j] = mutated_state[j], mutated_state[i]
     return mutated_state
+
 
 ##################################################
 ################## REPLACEMENT ###################
